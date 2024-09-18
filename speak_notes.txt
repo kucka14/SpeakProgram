@@ -1,1 +1,2 @@
 why are NaNs showing up after reading and standardizing a text
+currently replacing with 0 but cause should be addressed
