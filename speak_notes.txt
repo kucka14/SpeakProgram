@@ -1,2 +1,2 @@
-why are NaNs showing up after reading and standardizing a text
-currently replacing with 0 but cause should be addressed
+maybe have a way to standardize the couplet map and query that directly
+instead of doing a calculation each time
