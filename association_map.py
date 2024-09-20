@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 from nltk.tokenize import word_tokenize
-import math
+from queue import Queue
 
 class AssociationMap:
 
@@ -15,16 +15,12 @@ class AssociationMap:
         self.raw_token_map = pd.DataFrame(raw_token_map_array, columns=self.token_list, index=self.token_list)
         self.token_map = None
 
-        raw_couplet_map_array = np.zeros(shape=(int(((token_count*(token_count-1))/2)+token_count), token_count))
+        raw_couplet_map_array = np.zeros(shape=(int(((token_count*(token_count-1))/2)), token_count))
         index = []
-        doubled_tokens = set()
         for token1 in self.token_list:
             for token2 in self.token_list:
                 if token1 < token2:
                     index.append((token1, token2))
-                elif token1 == token2 and token1 not in doubled_tokens:
-                    index.append((token1, token2))
-                    doubled_tokens.add(token1)
         self.raw_couplet_map_counts = pd.DataFrame(raw_couplet_map_array, columns=self.token_list, index=index)
         self.raw_couplet_map_sums = pd.DataFrame(raw_couplet_map_array, columns=self.token_list, index=index)
 
@@ -55,16 +51,16 @@ class AssociationMap:
         count = 0
         self.token_map = self.raw_token_map.div(self.raw_token_map.sum(axis=1), axis=0)
         self.token_map = self.token_map.fillna(0)
-        doubled_words = set()
-        for word1 in self.token_list:
-            for word2 in self.token_list:
-                if word1 != word2 or word1 not in doubled_words:
-                    word1_score = self.token_map.at[word1, word2]
-                    word2_score = self.token_map.at[word2, word1]
-                    score = word1_score * word2_score
-                    self.token_map.at[word1, word2] = score
-                    if word1 == word2:
-                        doubled_words.add(word1)
+        doubled_tokens = set()
+        for token1 in self.token_list:
+            for token2 in self.token_list:
+                if token1 != token2 or token1 not in doubled_tokens:
+                    token1_score = self.token_map.at[token1, token2]
+                    token2_score = self.token_map.at[token2, token1]
+                    score = token1_score * token2_score
+                    self.token_map.at[token1, token2] = score
+                    if token1 == token2:
+                        doubled_tokens.add(token1)
             count += 1
             if count % 50 == 0:
                 print(f'{round((count*100)/len(self.token_list), 2)}%', end='\r')
@@ -74,67 +70,37 @@ class AssociationMap:
         if isinstance(token, str):
             row = self.token_map.loc[token, :].copy()
         elif isinstance(token, tuple):
-            row_counts = self.raw_couplet_map_count.loc[[token]].copy()
+            row_counts = self.raw_couplet_map_counts.loc[[token]].copy()
             row_sums = self.raw_couplet_map_sums.loc[[token]].copy()
             row = row_sums / row_counts
+            row = row.fillna(0)
         if normalize:
             row_sum = row.sum()
             if row_sum == 0:
                 row_sum = 1
             row /= row_sum
-        return tuple(zip(tuple(self.token_list), tuple(row)))
-            
-
-class TokenQueue:
-
-    def __init__(self):
-        self.queue0 = []
-        self.queue1 = []
-        self.queue2 = []
-        self.queue3 = []
-
-    def put(self, item):
-        if isinstance(item[0], str) and item[0] in self.queue0:
-            item_index = self.queue0.index(item[0])
-            origin_token1 = self.queue1[item_index]
-            origin_token2  = item[1]
-            self.queue1[item_index] = item[1]
-            self.queue2[item_index] = max(self.queue2[item_index], item[2])
-            self.queue3[item_index] += item[3]
-            return (origin_token1, origin_token2, self.queue3[item_index])
-        else:
-            self.queue0.append(item[0])
-            self.queue1.append(item[1])
-            self.queue2.append(item[2])
-            self.queue3.append(item[3])
-            return None
-
-    def get(self):
-        if len(self.queue0) == 0:
-            return None
-        return (self.queue0.pop(0), self.queue1.pop(0), self.queue2.pop(0), self.queue3.pop(0))
-    
-    def is_empty(self):
-        return len(self.queue0) == 0
+        row_as_tuple = tuple(zip(tuple(self.token_list), tuple(row.values.flatten())))
+        return row_as_tuple
 
 
 def get_related_tokens(association_map, input_string, max_depth):
-
+    
     related_tokens = {}
     input_tokens = word_tokenize(input_string.lower())
 
     branch_factor = 8
     global_level = 0
 
-    tq = TokenQueue()
+    token_queue = Queue()
     for input_token in input_tokens:
-        tq.put((input_token, input_token, 0, 1))
-        for input_token_alt in input_tokens:
-            if input_token < input_token_alt:
-                tq.put(((input_token, input_token_alt), (input_token, input_token_alt), 0, 1))
-    while not tq.is_empty():
+        token_queue.put((input_token, input_token, 0, 1))
+    for input_token_alt in input_tokens:
+        if input_token < input_token_alt:
+            token_queue.put(((input_token, input_token_alt), (input_token, input_token_alt), 0, 1))
+   
+    while not token_queue.empty():
 
-        key_quartet = tq.get()
+        key_quartet = token_queue.get()
         key = key_quartet[0]
         origin_token = key_quartet[1]
         local_level = key_quartet[2]
@@ -147,7 +113,10 @@ def get_related_tokens(association_map, input_string, max_depth):
                 branch_factor = 2
             global_level = local_level
 
-        related_tokens[key] = related_tokens.get(key, 0) + focus
+        if isinstance(key, str):
+            entry = related_tokens.get(key, [])
+            entry.append((origin_token, focus))
+            related_tokens[key] = entry
 
         normalize = False
         if isinstance(key, str):
@@ -157,14 +126,23 @@ def get_related_tokens(association_map, input_string, max_depth):
         for associated_token in top_associated_tokens:
             associated_token_score = associated_token[1] * focus
             token_quartet = (associated_token[0], origin_token, local_level+1, associated_token_score)
-            couplet_map_update = tq.put(token_quartet)
-            if couplet_map_update is not None:
-                token1 = couplet_map_update[0]
-                token2 = couplet_map_update[1]
-                if token1 <= token2:
-                    couplet = (token1, token2)
-                else:
-                    couplet = (token2, token1)
+            token_queue.put(token_quartet)
+
+    related_tokens_merged = {}
+    for destination_token in related_tokens:
+        origin_couplets = related_tokens[destination_token]
+        destination_sum = 0
+        origins = set()
+        for origin_couplet in origin_couplets:
+            origins.add(origin_couplet[0])
+            destination_sum += origin_couplet[1]
+        related_tokens_merged[destination_token] = destination_sum
+
+        origin_pairs_sum = destination_sum / len(origins)
+        for origin1 in origins:
+            for origin2 in origins:
+                if origin1 < origin2:
+                    couplet = (origin1, origin2)
                 association_map.raw_couplet_map_counts.at[couplet, associated_token[0]] += 1
                 association_map.raw_couplet_map_sums.at[couplet, associated_token[0]] += associated_token_score
 
