@@ -11,10 +11,14 @@ class AssociationMap:
         self.token_set = set([token.lower().strip() for token in tokens])
         token_count = len(self.token_set)
         self.token_list = sorted(list(self.token_set))
+
+        # create a dataframe with tokens as indices and column headers
         raw_token_map_array = np.zeros(shape=(token_count, token_count))
         self.raw_token_map = pd.DataFrame(raw_token_map_array, columns=self.token_list, index=self.token_list)
-        self.token_map = None
+        self.token_map = None # this will be the standardized version, after calling standardize_token_map
 
+        # create two dataframes mapping token couplets to tokens
+        # one dataframe will hold the counts, one the sums, average can be computed using both
         raw_couplet_map_array = np.zeros(shape=(int(((token_count*(token_count-1))/2)), token_count))
         index = []
         for token1 in self.token_list:
@@ -46,6 +50,7 @@ class AssociationMap:
                 print(f'{round((pointer*100)/len(text_tokens), 2)}%', end='\r')
         print('100.00%')
 
+    # this should be run after add_text, or after add_text*(n times)
     def standardize_token_map(self):
         print('0.00%', end='\r')
         count = 0
@@ -66,6 +71,7 @@ class AssociationMap:
                 print(f'{round((count*100)/len(self.token_list), 2)}%', end='\r')
         print('100.00%')
 
+    #get the associated row, whether index is token or token couplet
     def get_association_row(self, token, normalize):
         if isinstance(token, str):
             row = self.token_map.loc[token, :].copy()
@@ -118,10 +124,7 @@ def get_related_tokens(association_map, input_string, max_depth):
             entry.append((origin_token, focus))
             related_tokens[key] = entry
 
-        normalize = False
-        if isinstance(key, str):
-            normalize = True
-        association_tuple = association_map.get_association_row(key, normalize)
+        association_tuple = association_map.get_association_row(key, normalize=False)
         top_associated_tokens = sorted(association_tuple, key=lambda x: x[1], reverse=True)[:branch_factor]
         for associated_token in top_associated_tokens:
             associated_token_score = associated_token[1] * focus
@@ -129,6 +132,8 @@ def get_related_tokens(association_map, input_string, max_depth):
             token_queue.put(token_quartet)
 
     related_tokens_merged = {}
+    # for related_tokens, destination tokens are keys, list of origin token couplets are values
+    # the list of origin tokens and values is necessary above, but the merged sum is relevant for output
     for destination_token in related_tokens:
         origin_couplets = related_tokens[destination_token]
         destination_sum = 0
@@ -138,14 +143,15 @@ def get_related_tokens(association_map, input_string, max_depth):
             destination_sum += origin_couplet[1]
         related_tokens_merged[destination_token] = destination_sum
 
+        # update the association_map for future uses of this function
         origin_pairs_sum = destination_sum / len(origins)
         for origin1 in origins:
             for origin2 in origins:
                 if origin1 < origin2:
                     couplet = (origin1, origin2)
-                association_map.raw_couplet_map_counts.at[couplet, associated_token[0]] += 1
-                association_map.raw_couplet_map_sums.at[couplet, associated_token[0]] += associated_token_score
+                    association_map.raw_couplet_map_counts.at[couplet, associated_token[0]] += 1
+                    association_map.raw_couplet_map_sums.at[couplet, associated_token[0]] += origin_pairs_sum
 
-    return related_tokens
+    return related_tokens_merged
             
             

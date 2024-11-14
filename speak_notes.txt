@@ -1,2 +1,0 @@
-maybe have a way to standardize the couplet map and query that directly
-instead of doing a calculation each time
