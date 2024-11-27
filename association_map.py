@@ -100,9 +100,9 @@ def get_related_tokens(association_map, input_string, max_depth):
     token_queue = Queue()
     for input_token in input_tokens:
         token_queue.put((input_token, input_token, 0, 1))
-    for input_token_alt in input_tokens:
-        if input_token < input_token_alt:
-            token_queue.put(((input_token, input_token_alt), (input_token, input_token_alt), 0, 1))
+        for input_token_alt in input_tokens:
+            if input_token < input_token_alt:
+                token_queue.put(((input_token, input_token_alt), (input_token, input_token_alt), 0, 1))
    
     while not token_queue.empty():
 
@@ -139,7 +139,9 @@ def get_related_tokens(association_map, input_string, max_depth):
         destination_sum = 0
         origins = set()
         for origin_couplet in origin_couplets:
-            origins.add(origin_couplet[0])
+            # for next paragraph, only works with string values
+            if isinstance(origin_couplet[0], str):
+                origins.add(origin_couplet[0])
             destination_sum += origin_couplet[1]
         related_tokens_merged[destination_token] = destination_sum
 

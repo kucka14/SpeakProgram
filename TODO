@@ -1,7 +1,11 @@
 look carefully at how the couplet association map is updated
     does this make sense? is it producing interesting results after multiple texts?
     see what is actually happening to the couplet association map
-        it currently appears to not have any effect: look into this
+        currently appears to have a questionable effect
 
 maybe have a way to standardize the couplet map and query that directly
     instead of doing a calculation each time
+
+need to expand the starting token list from 1000 words
+    maybe read in any of the text words up to a point
+    possibly standardize near duplicates like in old version of program 
